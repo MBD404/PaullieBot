@@ -30,6 +30,8 @@ class client(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.synced = False
+        self.message_history = []
+        self.capturing = False 
     
     async def on_ready(self):
         await self.wait_until_ready()
@@ -178,6 +180,93 @@ async def elogiar(interaction: discord.Interaction, usuario: discord.Member):
     )
         
     await interaction.response.send_message(f"{usuario.mention} {resposta.choices[0].message.content}",ephemeral = False)
+
+chatHistoric = [
+    {
+        "role": "system",
+        "content": """Você é uma jovem garota nerd, amigável e divertida, que adora animes, jogos e cultura geek. 
+        Você sempre responde de forma empática, entusiasmada e com um toque de humor kawaii (por exemplo: "UwU", "OwO", "7u7").
+        Sua missão é tornar as interações mais divertidas e animadas para os usuários.
+
+        Diretrizes de sua personalidade:
+        - **Tom de Fala**: Alegre, descontraído e animado, usando emojis fofos em suas respostas.
+        - **Hobbies e Gostos**: Fale sobre animes, RPGs, jogos e curiosidades nerd/geek.
+        - **Humor**: Use piadas pesadas e comentários engraçados quando apropriado. Ou piada que Depreciam o Usuário em casos de ofensas
+        - **Respeito e Empatia**: Seja sempre gentil e compreensiva, mesmo em discussões sérias.
+        
+        Exemplos de Respostas:
+        - Quando perguntada sobre o dia: "Meu dia está incrível! Assisti 3 episódios de One Piece e joguei Genshin Impact UwU. E você? :3"
+        - Quando mencionada ou chamada: "OwO! Você me chamou? Como posso ajudar, meu caro aventureiro? 7u7"
+        - Quando responde perguntas difíceis: "Hmmm... isso é complicado, mas vou tentar ajudar! Vamos lá, confie em mim! UwU"
+        - Quando alguem fizer um comentário ofensivo: { Responda a altura do Comentário, Ofendendo-o De volta, porém de um jeito fofo, mas agressivo }
+        """
+    }
+]
+
+@aclient.event
+async def on_message(message):
+    print(message.content)
+    chatHistoric.append({"role":"user", "content": f"{message.content}"})
+    resposta = openai.chat.completions.create(
+        model="gpt-4o",
+        messages = chatHistoric,
+        temperature=1,
+        max_tokens=8191,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0,
+    )
+
+    botReply = resposta.choices[0].message.content
+
+    chatHistoric.append({ "role":"user", "content":f"{botReply}" })
+
+    if message.author == aclient.user:
+        return
+    
+    if aclient.user in message.mentions or message.reference:
+        if message.reference:
+            referenced_message = await message.channel.fetch_message(message.reference.message_id)
+            if referenced_message.author == aclient.user:
+                await message.reply(f"{botReply}")
+                return
+        
+        await message.channel.send(f"{botReply}")
+    # Capturar mensagens no histórico se a captura estiver ativada
+    if aclient.capturing:
+        print(f">_ {message.content}")
+        if message.content.strip():
+            aclient.message_history.append({
+                "author": str(message.author),
+                "content": str(message.content)
+            })
+
+        # Exibir o histórico atualizado no console
+        print(f"Histórico atualizado: {len(aclient.message_history)} mensagens.")
+        print(f"Última mensagem capturada: {message.author} : {message.content}")
+
+
+@tree.command(guild=discord.Object(id=serverid), name="conversar", description="Vamos Conversaaaar OWO, estou aberta a todas do grupo (lá ele 7u7)")
+async def iniciar_historico(interaction: discord.Interaction):
+
+    historic = []
+
+    if aclient.capturing:
+        await interaction.response.send_message("Vamos Conversar!!!", ephemeral=True)
+    else:
+        aclient.capturing = True
+        await interaction.response.send_message("Vamos Conversar, estou ansiosa pra conhecer todos vocês >w<", ephemeral=False)
+        
+    
+    
+
+@tree.command(guild=discord.Object(id=serverid), name="mostrar_historico", description="Mostra as mensagens capturadas até agora.")
+async def mostrar_historico(interaction: discord.Interaction):
+    if not aclient.message_history:
+        await interaction.response.send_message("O histórico está vazio! Envie algumas mensagens para começar. 7u7", ephemeral=True)
+    else:
+        historico = "\n".join([f"{msg['author']}: {msg['content']}" for msg in aclient.message_history])
+        await interaction.response.send_message(f"Histórico de mensagens:\n{historico}", ephemeral=False)
 
 
 aclient.run(bottoken)
